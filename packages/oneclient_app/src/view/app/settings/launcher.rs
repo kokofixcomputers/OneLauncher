@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use freya::prelude::*;
 use freya::router::RouterContext;
 use oneclient_core::relocate::RelocationPlan;
-use oneclient_core::settings::{LaunchBehaviour, LauncherSettings, data_dir};
+use oneclient_core::settings::{HomePage, LaunchBehaviour, LauncherSettings, data_dir};
 use oneclient_core::storage::format_bytes;
 
 use super::{resettable, section_header, settings_page, settings_row};
@@ -58,6 +58,11 @@ impl Component for SettingsLauncher {
             move || v
         });
 
+        let home_page = use_state({
+            let v = settings.home_page;
+            move || v
+        });
+
         let open_game_log = use_state({
             let v = settings.open_game_log_on_launch;
             move || v
@@ -71,6 +76,7 @@ impl Component for SettingsLauncher {
             let background = *run_in_background.read();
             let tray = *show_tray_icon.read();
             let behaviour = *launch_behaviour.read();
+            let home = *home_page.read();
             let game_log = *open_game_log.read();
             if *first.peek() {
                 first.set(false);
@@ -83,6 +89,7 @@ impl Component for SettingsLauncher {
                 next.run_in_background = background;
                 next.show_tray_icon = tray;
                 next.launch_behaviour = behaviour;
+                next.home_page = home;
                 next.open_game_log_on_launch = game_log;
             });
         });
@@ -141,6 +148,16 @@ impl Component for SettingsLauncher {
                 "oneclient.settings.launcher.section.system",
             )))
             .child(settings_row(
+                IconType::LayoutTop,
+                t("oneclient.settings.launcher.home_page.title"),
+                t("oneclient.settings.launcher.home_page.description"),
+                resettable(
+                    home_page_field(home_page),
+                    home_page,
+                    defaults.home_page,
+                ),
+            ))
+            .child(settings_row(
                 IconType::Eye,
                 t("oneclient.settings.launcher.launch_behaviour.title"),
                 t("oneclient.settings.launcher.launch_behaviour.description"),
@@ -186,6 +203,22 @@ impl Component for SettingsLauncher {
             .child(DataFolder.into_element())
             .into_element()
     }
+}
+
+fn home_page_field(mut selected: State<HomePage>) -> impl IntoElement {
+    let options: Vec<String> = HomePage::ALL
+        .iter()
+        .map(|page| page.label().to_string())
+        .collect();
+
+    Dropdown::new(selected.read().label(), options)
+        .width(Size::px(220.))
+        .height(Size::px(34.))
+        .on_select(move |idx: usize| {
+            if let Some(page) = HomePage::ALL.get(idx).copied() {
+                selected.set(page);
+            }
+        })
 }
 
 fn launch_behaviour_field(mut selected: State<LaunchBehaviour>) -> impl IntoElement {

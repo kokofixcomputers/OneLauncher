@@ -11,6 +11,7 @@ use crate::hooks::{
 };
 use crate::i18n::{t, tf};
 use crate::theme::colors;
+use oneclient_core::settings::HomePage;
 
 /// Startup is a sequence of boolean gates, not measurable work, so the bar steps
 /// once per gate the launcher clears instead of tracking bytes
@@ -112,6 +113,8 @@ impl Component for Startup {
                 Route::Home {}
             } else if stale {
                 Route::OnboardingTerms {}
+            } else if settings.settings.home_page == HomePage::Versions {
+                Route::Clusters {}
             } else {
                 Route::Home {}
             };

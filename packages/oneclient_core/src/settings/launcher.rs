@@ -41,6 +41,26 @@ impl LaunchBehaviour {
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
+pub enum HomePage {
+    #[default]
+    Home,
+    Versions,
+}
+
+impl HomePage {
+    pub const ALL: [Self; 2] = [Self::Home, Self::Versions];
+
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Home => "Home",
+            Self::Versions => "Versions",
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
 pub enum AppTheme {
     #[default]
     Dark,
@@ -85,6 +105,7 @@ pub struct LauncherSettings {
     pub global_game_settings: GameSettingsProfile,
     pub allow_parallel_running_clusters: bool,
     pub launch_behaviour: LaunchBehaviour,
+    pub home_page: HomePage,
     pub open_game_log_on_launch: bool,
     pub run_in_background: bool,
     pub show_tray_icon: bool,
@@ -146,6 +167,7 @@ impl Default for LauncherSettings {
             global_game_settings: GameSettingsProfile::default_global_profile(),
             allow_parallel_running_clusters: true,
             launch_behaviour: LaunchBehaviour::default(),
+            home_page: HomePage::default(),
             open_game_log_on_launch: true,
             run_in_background: false,
             show_tray_icon: true,

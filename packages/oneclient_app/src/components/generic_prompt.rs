@@ -38,20 +38,30 @@ impl Component for GenericPromptOverlay {
 
         let close = dispatch.clone();
 
-        let mut buttons = rect()
-            .horizontal()
-            .width(Size::fill())
-            .main_align(Alignment::End)
-            .spacing(8.);
+        // Four labels no longer fit one row of the dialog so they stack full width
+        let stacked = prompt.choices.len() + usize::from(prompt.dismiss.is_some()) > 3;
 
-        if let Some(dismiss) = prompt.dismiss.clone() {
+        let mut buttons = rect().width(Size::fill()).spacing(8.);
+        buttons = if stacked {
+            buttons.vertical()
+        } else {
+            buttons.horizontal().main_align(Alignment::End)
+        };
+
+        let dismiss_button = prompt.dismiss.clone().map(|dismiss| {
             let cancel = dispatch.clone();
-            buttons = buttons.child(
-                Button::new()
-                    .secondary()
-                    .text(dismiss)
-                    .on_press(move |_| cancel.dismiss_prompt()),
-            );
+            let button = Button::new()
+                .secondary()
+                .text(dismiss)
+                .on_press(move |_| cancel.dismiss_prompt());
+            if stacked {
+                button.width(Size::fill())
+            } else {
+                button
+            }
+        });
+        if !stacked {
+            buttons = buttons.maybe_child(dismiss_button.clone());
         }
 
         for choice in &prompt.choices {
@@ -64,6 +74,11 @@ impl Component for GenericPromptOverlay {
                 ChoiceStyle::Primary => button.primary(),
                 ChoiceStyle::Danger => button.danger(),
                 ChoiceStyle::Secondary => button.secondary(),
+            };
+            let button = if stacked {
+                button.width(Size::fill())
+            } else {
+                button
             };
 
             buttons = buttons.child(button.on_press(move |_| match &input {
@@ -94,6 +109,10 @@ impl Component for GenericPromptOverlay {
             }));
         }
 
+        if stacked {
+            buttons = buttons.maybe_child(dismiss_button);
+        }
+
         OverlayPopup::new()
             .on_close(move |_| close.dismiss_prompt())
             .child(
@@ -122,7 +141,7 @@ impl Component for GenericPromptOverlay {
                                 label()
                                     .text(prompt.question.clone())
                                     .font_size(12.)
-                                    .max_lines(6)
+                                    .max_lines(12)
                                     .width(Size::fill())
                                     .color(colors::fg_secondary()),
                             )

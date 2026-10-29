@@ -65,11 +65,22 @@ pub async fn decide_before_launch(actions: &Actions, cluster_id: ClusterId) -> D
                     .map(|u| u.new_file.size)
                     .chain(check.additions_available.iter().map(|a| a.new_file.size))
                     .sum();
-                Some((signature.join("|"), count, bytes))
+                let names: Vec<String> = check
+                .updates_available
+                .iter()
+                .map(|u| u.new_file.display_name())
+                .chain(
+                    check
+                        .additions_available
+                        .iter()
+                        .map(|a| a.new_file.display_name()),
+                )
+                .collect();
+            Some((signature.join("|"), count, bytes, names))
             }
         })
         .await;
-    let Some((signature, count, bytes)) = pending else {
+    let Some((signature, count, bytes, names)) = pending else {
         return Decision::Apply;
     };
 
@@ -80,7 +91,7 @@ pub async fn decide_before_launch(actions: &Actions, cluster_id: ClusterId) -> D
         return Decision::Skip;
     }
 
-    let answer = match actions.events().ask(prompt(count, bytes)).await {
+    let answer = match actions.events().ask(prompt(count, bytes, &names)).await {
         Ok(Some(chosen)) => chosen.value,
         Ok(None) => return Decision::Cancel,
         Err(err) => {
@@ -101,11 +112,24 @@ pub async fn decide_before_launch(actions: &Actions, cluster_id: ClusterId) -> D
     }
 }
 
-fn prompt(count: usize, bytes: u64) -> Prompt<Answer> {
+fn prompt(count: usize, bytes: u64, names: &[String]) -> Prompt<Answer> {
+    const SHOWN: usize = 4;
     let size = format!("{:.1} MB", bytes as f64 / 1_048_576.0);
+    let mut files: Vec<String> = names
+        .iter()
+        .take(SHOWN)
+        .map(|name| format!("\u{2022} {name}"))
+        .collect();
+    if names.len() > SHOWN {
+        files.push(tf(
+            "oneclient.bundle_update.more",
+            &[&(names.len() - SHOWN)],
+        ));
+    }
+    let files = files.join("\n");
     Prompt::new(
         t("oneclient.bundle_update.title"),
-        tf("oneclient.bundle_update.body", &[&size, &count]),
+        tf("oneclient.bundle_update.body", &[&size, &count, &files]),
     )
     .option(
         Choice::primary(

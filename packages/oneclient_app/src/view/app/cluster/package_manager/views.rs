@@ -446,6 +446,7 @@ pub(super) fn toolbar_bar(
             .text(t("oneclient.cluster.package_manager.select.select"))
             .into_element(),
     );
+    let add_dispatch = dispatch.clone();
     controls.push(
         Button::new()
             .primary()
@@ -453,7 +454,7 @@ pub(super) fn toolbar_bar(
             .font_size(12.)
             .on_press(move |_| {
                 if local_tab {
-                    import_from_file(cluster_id, content_type, dispatch.clone());
+                    import_from_file(cluster_id, content_type, add_dispatch.clone());
                 } else {
                     open_browser(cluster_id, package_type);
                 }
@@ -473,6 +474,16 @@ pub(super) fn toolbar_bar(
             })
             .into_element(),
     );
+    if !local_tab {
+        controls.push(
+            AddFromFileMenu {
+                cluster_id,
+                content_type,
+                dispatch: dispatch.clone(),
+            }
+            .into_element(),
+        );
+    }
     let controls = if bulk.active() {
         bulk.controls()
     } else {
@@ -755,6 +766,59 @@ fn filter_button(
                 })
             }),
         )
+}
+
+/// The arrow beside "Add Content" for adding a file from disk instead of browsing
+#[derive(Clone)]
+struct AddFromFileMenu {
+    cluster_id: i64,
+    content_type: ContentType,
+    dispatch: Actions,
+}
+
+impl PartialEq for AddFromFileMenu {
+    fn eq(&self, other: &Self) -> bool {
+        self.cluster_id == other.cluster_id && self.content_type == other.content_type
+    }
+}
+
+impl Component for AddFromFileMenu {
+    fn render(&self) -> impl IntoElement {
+        let mut position = use_state(|| None::<(f32, f32)>);
+        let (cluster_id, content_type) = (self.cluster_id, self.content_type);
+        let dispatch = self.dispatch.clone();
+
+        let menu = (*position.read()).map(|(x, y)| {
+            let dispatch = dispatch.clone();
+            ContextMenu::new(x, y)
+                .on_close(move |_| position.set(None))
+                .action(
+                    IconType::FilePlus02,
+                    t("oneclient.cluster.package_manager.add_from_file"),
+                    move |()| {
+                        position.set(None);
+                        import_from_file(cluster_id, content_type, dispatch.clone());
+                    },
+                )
+                .into_element()
+        });
+
+        rect().maybe_child(menu).child(
+            Button::new()
+                .primary()
+                .icon()
+                .height(Size::px(34.))
+                .on_press(move |e: Event<PressEventData>| {
+                    if let PressEventData::Mouse(m) = e.data() {
+                        position.set(Some((
+                            m.global_location.x as f32,
+                            m.global_location.y as f32,
+                        )));
+                    }
+                })
+                .child(Icon::new(IconType::ChevronDown).size(15.)),
+        )
+    }
 }
 
 fn import_from_file(cluster_id: i64, content_type: ContentType, dispatch: Actions) {
