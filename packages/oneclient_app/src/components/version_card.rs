@@ -6,7 +6,7 @@ use crate::components::{ART_PREVIEW_EDGE, ClusterContextMenu, ClusterMenuTarget,
 use crate::i18n::tf;
 use crate::theme::colors;
 use crate::ui::border_all_color;
-use crate::utils::{GridSelection, ReleaseLine, line_art_key, line_title};
+use crate::utils::GridSelection;
 
 const CARD_HEIGHT_PX: f32 = 150.;
 
@@ -25,26 +25,6 @@ impl VersionCard {
     pub fn menu(mut self, target: Option<ClusterMenuTarget>) -> Self {
         self.menu = target;
         self
-    }
-
-    pub fn new(
-        line: ReleaseLine,
-        clusters: &[Cluster],
-        caption: String,
-        selected: bool,
-        on_press: impl Into<EventHandler<Event<PressEventData>>>,
-    ) -> Self {
-        Self {
-            key: GridSelection::Line(line),
-            art: DynamicArt::for_version(line.major, line_art_key(line, clusters), None)
-                .max_edge(ART_PREVIEW_EDGE),
-            title: line_title(line, clusters),
-            caption,
-            count: clusters.len(),
-            selected,
-            on_press: on_press.into(),
-            menu: None,
-        }
     }
 
     pub fn for_instance(

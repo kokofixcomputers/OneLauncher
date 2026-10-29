@@ -2,30 +2,28 @@ use std::path::PathBuf;
 
 use freya::prelude::*;
 use freya::router::RouterContext;
-use oneclient_common::domain::GameLoader;
-use oneclient_common::{VersionKey, parse_mc_version};
 use oneclient_core::clusters::Cluster;
 use oneclient_core::settings::ViewLayout;
 
 use crate::components::ClusterMenuTarget;
 use crate::components::{
-    ART_PREVIEW_EDGE, Button, Dropdown, DynamicArt, FilterMenu, FilterOption, Icon, IconType,
-    InstanceRow, ScrollArea, Segment, SegmentedControl, TabBar, TabItem, TextInput, VersionCard,
+    ART_PREVIEW_EDGE, Button, DynamicArt, FilterMenu, FilterOption, Icon, IconType, InstanceRow,
+    ScrollArea, Segment, SegmentedControl, TabBar, TabItem, TextInput, VersionCard,
     open_folder_button,
 };
 use crate::hooks::{
     settled_or_loading, use_active_cluster_id, use_clusters, use_dispatch, use_game_snapshot,
-    use_launcher, use_version_metadata, use_view_state,
+    use_launcher, use_view_state,
 };
-use crate::i18n::{t, tf};
+use crate::i18n::t;
 use crate::routes::Route;
 use crate::theme::colors;
 use crate::ui::{
     border_all_color, fixed_grid, grid_columns_for_width, last_played_label, window_logical_size,
 };
 use crate::utils::{
-    ClusterGroups, GridSelection, ReleaseLine, default_line, default_loader, default_version_key,
-    format_duration, line_title, resolve_cluster, sort_clusters_for_home, split_clusters,
+    ClusterGroups, GridSelection, ReleaseLine, format_duration, sort_clusters_for_home,
+    split_clusters,
 };
 use crate::view::app::clusters::CreateInstanceModal;
 use crate::view::app::{launch_button_state, launch_syncing, use_shared_dir_taken};
@@ -150,7 +148,6 @@ impl Component for Clusters {
         let active_id = use_active_cluster_id();
         let show_create = use_state(|| false);
         let mut selected = use_state(|| None::<GridSelection>);
-        let mut selected_cluster = use_state(|| None::<i64>);
         let mut filter = use_state(|| Filter::All);
         let query = use_state(String::new);
         let loaders = use_state(Vec::<String>::new);
@@ -193,27 +190,30 @@ impl Component for Clusters {
             .read()
             .and_then(|id| clusters.iter().find(|c| c.id == id).cloned());
 
+        let oneclient: Vec<Cluster> = recent_line_heads(&groups)
+            .iter()
+            .filter_map(ReleaseLine::for_cluster)
+            .flat_map(|l| groups[&l].clone())
+            .collect();
         let fallback = || {
-            lines
+            oneclient
                 .first()
-                .copied()
-                .map(GridSelection::Line)
-                .or_else(|| instances.first().map(|c| GridSelection::Instance(c.id)))
+                .or_else(|| instances.first())
+                .map(|c| GridSelection::Instance(c.id))
         };
 
         if selected.read().is_none() {
-            *selected.write() = match active_cluster.as_ref() {
-                Some(cluster) if cluster.is_isolated() => Some(GridSelection::Instance(cluster.id)),
-                other => default_line(&groups, other.cloned())
-                    .map(GridSelection::Line)
-                    .or_else(fallback),
-            };
+            *selected.write() = active_cluster
+                .as_ref()
+                .map(|c| GridSelection::Instance(c.id))
+                .or_else(fallback);
         }
 
         let current = (*selected.read())
             .filter(|sel| match sel {
-                GridSelection::Line(line) => groups.contains_key(line),
-                GridSelection::Instance(id) => instances.iter().any(|c| c.id == *id),
+                GridSelection::Instance(id) => {
+                    instances.iter().chain(&oneclient).any(|c| c.id == *id)
+                }
             })
             .or_else(fallback);
 
@@ -221,27 +221,12 @@ impl Component for Clusters {
             *selected.write() = current;
         }
 
-        let line = match current {
-            Some(GridSelection::Line(line)) => Some(line),
-            _ => None,
-        };
-
-        let clusters_for_line = line
-            .and_then(|line| groups.get(&line).cloned())
-            .unwrap_or_default();
-
-        if line.is_some() && selected_cluster.read().is_none() {
-            *selected_cluster.write() =
-                default_line_cluster(&clusters_for_line, active_cluster.as_ref());
-        }
-
-        let cluster = selected_cluster
-            .read()
-            .and_then(|id| clusters_for_line.iter().find(|c| c.id == id).cloned())
-            .or_else(|| clusters_for_line.first().cloned());
-
         let instance = match current {
-            Some(GridSelection::Instance(id)) => instances.iter().find(|c| c.id == id).cloned(),
+            Some(GridSelection::Instance(id)) => instances
+                .iter()
+                .chain(&oneclient)
+                .find(|c| c.id == id)
+                .cloned(),
             _ => None,
         };
 
@@ -278,15 +263,9 @@ impl Component for Clusters {
         let matches = |c: &Cluster| cluster_matches(c, &picked_loaders, &needle);
         let sort_by = *sort.read();
 
-        let line_heads = recent_line_heads(&groups);
-        let shown_lines: Vec<ReleaseLine> =
-            shown(&line_heads.iter().collect::<Vec<_>>(), sort_by, |c| {
-                active_filter.shows(Filter::OneClient)
-                    && ReleaseLine::for_cluster(c).is_some_and(|l| groups[&l].iter().any(matches))
-            })
-            .into_iter()
-            .filter_map(ReleaseLine::for_cluster)
-            .collect();
+        let shown_oneclient = shown(&oneclient.iter().collect::<Vec<_>>(), sort_by, |c| {
+            active_filter.shows(Filter::OneClient) && matches(c)
+        });
         let shown_custom = shown(&custom, sort_by, |c| {
             active_filter.shows(Filter::Custom) && matches(c)
         });
@@ -302,52 +281,11 @@ impl Component for Clusters {
             .child(layout_toggle(layout))
             .into_element();
         let nothing_shown =
-            shown_lines.is_empty() && shown_custom.is_empty() && shown_packs.is_empty();
+            shown_oneclient.is_empty() && shown_custom.is_empty() && shown_packs.is_empty();
 
         let tabs = Filter::ALL.map(|value| {
             TabItem::new(value.label(), active_filter == value).on_press(move |_| filter.set(value))
         });
-
-        let active_cluster = clusters
-            .iter()
-            .find(|c| Some(c.id) == *active_id.read())
-            .cloned();
-        let line_cards: Vec<Element> = shown_lines
-            .iter()
-            .map(|&line| {
-                let list = &groups[&line];
-                let item = GridSelection::Line(line);
-                let is_selected = current == Some(item);
-                let picked = cluster
-                    .as_ref()
-                    .filter(|c| is_selected && list.iter().any(|listed| listed.id == c.id));
-                let line_menu = match list.as_slice() {
-                    [only] => Some(ClusterMenuTarget::for_cluster(only, true)),
-                    _ => picked
-                        .map(|c| c.id)
-                        .or_else(|| default_line_cluster(list, active_cluster.as_ref()))
-                        .and_then(|id| list.iter().find(|c| c.id == id))
-                        .map(|c| ClusterMenuTarget::for_cluster(c, false)),
-                };
-                let caption = match (is_selected, &cluster, list.as_slice()) {
-                    (true, Some(c), _) | (_, _, [c]) => cluster_caption(c),
-                    _ => tf("oneclient.clusters.page.instance_count", &[&list.len()]),
-                };
-                let on_press = move |_| {
-                    selected.set(Some(item));
-                    selected_cluster.set(None);
-                };
-                if grid {
-                    VersionCard::new(line, list, caption, is_selected, on_press)
-                        .menu(line_menu)
-                        .into_element()
-                } else {
-                    InstanceRow::for_line(line, list, caption, is_selected, on_press)
-                        .menu(line_menu)
-                        .into_element()
-                }
-            })
-            .collect();
 
         let instance_rows = |list: &[&Cluster]| -> Vec<Element> {
             list.iter()
@@ -369,24 +307,9 @@ impl Component for Clusters {
                 .collect()
         };
 
-        let sidebar = match (instance, line, cluster) {
-            (Some(instance), _, _) => Sidebar::for_instance(&instance, sidebar_w).into_element(),
-            (None, Some(line), Some(cluster)) => {
-                let parsed = parse_mc_version(&cluster.mc_version);
-                LineSidebar {
-                    major: line.major,
-                    key: parsed.and_then(|p| p.key()),
-                    loader: cluster.mc_loader,
-                    user_created: cluster.user_created,
-                    base: Sidebar {
-                        picker: line_picker(line, &cluster, &clusters_for_line, selected_cluster),
-                        description: cluster.description.clone(),
-                        ..Sidebar::base(&cluster, sidebar_w)
-                    },
-                }
-                .into_element()
-            }
-            _ => sidebar_error(sidebar_w),
+        let sidebar = match instance {
+            Some(instance) => Sidebar::for_instance(&instance, sidebar_w).into_element(),
+            None => sidebar_error(sidebar_w),
         };
 
         rect()
@@ -433,11 +356,16 @@ impl Component for Clusters {
                                     .height(Size::flex(1.0))
                                     .scrollbar_gutter(true)
                                     .spacing(22.)
-                                    .append_children((!shown_lines.is_empty()).then(|| {
+                                    .append_children((!shown_oneclient.is_empty()).then(|| {
                                         section(
                                             "OneClient",
                                             t("oneclient.clusters.page.section.oneclient"),
-                                            fixed_grid(line_cards, columns, item_height, gap),
+                                            fixed_grid(
+                                                instance_rows(&shown_oneclient),
+                                                columns,
+                                                item_height,
+                                                gap,
+                                            ),
                                         )
                                     }))
                                     .append_children(
@@ -508,29 +436,6 @@ pub(crate) fn shown<'a>(
 
 fn cluster_caption(cluster: &Cluster) -> String {
     format!("{} \u{b7} {}", cluster.mc_version, cluster.mc_loader)
-}
-
-fn picker_caption(cluster: &Cluster) -> String {
-    if cluster.user_created {
-        format!("{} \u{b7} {}", cluster.name, cluster_caption(cluster))
-    } else {
-        cluster_caption(cluster)
-    }
-}
-
-fn default_line_cluster(clusters: &[Cluster], active: Option<&Cluster>) -> Option<i64> {
-    if let Some(active) = active.filter(|a| clusters.iter().any(|c| c.id == a.id)) {
-        return Some(active.id);
-    }
-    let preferred_key = active
-        .and_then(|c| parse_mc_version(&c.mc_version))
-        .and_then(|p| p.key());
-    resolve_cluster(
-        clusters,
-        default_version_key(clusters, preferred_key),
-        default_loader(clusters, active.map(|c| c.mc_loader)),
-    )
-    .map(|c| c.id)
 }
 
 fn bottom_border() -> Border {
@@ -665,53 +570,6 @@ pub(crate) fn search_input(query: State<String>, width: Size) -> Element {
         .into_element()
 }
 
-fn line_picker(
-    line: ReleaseLine,
-    cluster: &Cluster,
-    siblings: &[Cluster],
-    mut selected_cluster: State<Option<i64>>,
-) -> Option<Element> {
-    if siblings.len() <= 1 {
-        return None;
-    }
-
-    let options: Vec<String> = siblings.iter().map(picker_caption).collect();
-    let current = siblings
-        .iter()
-        .position(|c| c.id == cluster.id)
-        .unwrap_or(0);
-    let ids: Vec<i64> = siblings.iter().map(|c| c.id).collect();
-
-    Some(
-        rect()
-            .vertical()
-            .width(Size::fill())
-            .spacing(8.)
-            .child(
-                label()
-                    .text(tf(
-                        "oneclient.clusters.page.instances_on",
-                        &[&siblings.len(), &line_title(line, siblings)],
-                    ))
-                    .font_size(12.)
-                    .font_weight(FontWeight::MEDIUM)
-                    .color(colors::fg_secondary()),
-            )
-            .child(
-                Dropdown::new(options[current].clone(), options)
-                    .outlined()
-                    .width(Size::fill())
-                    .height(Size::px(40.))
-                    .on_select(move |idx: usize| {
-                        if let Some(id) = ids.get(idx).copied() {
-                            selected_cluster.set(Some(id));
-                        }
-                    }),
-            )
-            .into_element(),
-    )
-}
-
 #[derive(Clone, PartialEq)]
 struct Sidebar {
     width: f32,
@@ -756,40 +614,18 @@ impl Sidebar {
 
     fn for_instance(cluster: &Cluster, width: f32) -> Self {
         let mut sidebar = Self::base(cluster, width);
-        sidebar.type_label = if cluster.linked_modpack_hash.is_some() {
-            t("oneclient.clusters.page.type.modpack")
-        } else {
-            t("oneclient.clusters.page.type.custom")
-        };
+        if cluster.is_isolated() {
+            sidebar.type_label = if cluster.linked_modpack_hash.is_some() {
+                t("oneclient.clusters.page.type.modpack")
+            } else {
+                t("oneclient.clusters.page.type.custom")
+            };
+        }
         sidebar.description = cluster.description.clone();
         sidebar.meta.push((
             t("oneclient.clusters.page.meta.playtime"),
             format_duration(i64::try_from(cluster.overall_played.as_secs()).unwrap_or(i64::MAX)),
         ));
-        sidebar
-    }
-}
-
-#[derive(PartialEq)]
-struct LineSidebar {
-    major: u32,
-    key: Option<VersionKey>,
-    loader: GameLoader,
-    user_created: bool,
-    base: Sidebar,
-}
-
-impl Component for LineSidebar {
-    fn render(&self) -> impl IntoElement {
-        let metadata = use_version_metadata(Some(self.major), self.key, Some(self.loader));
-
-        let mut sidebar = self.base.clone();
-        if let Some(metadata) = metadata {
-            if !self.user_created {
-                sidebar.title = metadata.name;
-            }
-            sidebar.description = sidebar.description.or(metadata.long_description);
-        }
         sidebar
     }
 }
@@ -872,28 +708,63 @@ impl Component for Sidebar {
                     )
                     .child(
                         rect()
-                            .horizontal()
+                            .vertical()
                             .width(Size::fill())
-                            .content(Content::Flex)
                             .spacing(8.)
-                            .child(play_button(
-                                cluster_id,
-                                dispatch,
-                                launch_button_state(&game, cluster_id, syncing, shared_dir_taken),
-                            ))
                             .child(
-                                Button::new()
-                                    .secondary()
-                                    .icon()
-                                    .tooltip(t("oneclient.clusters.page.instance_settings"))
-                                    .on_press(move |_| {
-                                        *active_id.write() = Some(cluster_id);
-                                        let _ = RouterContext::get()
-                                            .push(Route::ClusterSettings { cluster_id });
-                                    })
-                                    .child(Icon::new(IconType::Settings01).size(16.)),
+                            rect()
+                                .horizontal()
+                                .width(Size::fill())
+                                .content(Content::Flex)
+                                .spacing(8.)
+                                .child(play_button(
+                                    cluster_id,
+                                    dispatch,
+                                    launch_button_state(&game, cluster_id, syncing, shared_dir_taken),
+                                ))
+                                .child(
+                                    Button::new()
+                                        .secondary()
+                                        .icon()
+                                        .tooltip(t("oneclient.clusters.page.instance_settings"))
+                                        .on_press(move |_| {
+                                            *active_id.write() = Some(cluster_id);
+                                            let _ = RouterContext::get()
+                                                .push(Route::ClusterSettings { cluster_id });
+                                        })
+                                        .child(Icon::new(IconType::Settings01).size(16.)),
+                                )
+                                .maybe_child(self.folder.clone().map(open_folder_button)),
                             )
-                            .maybe_child(self.folder.clone().map(open_folder_button)),
+                            .child(
+                                rect()
+                                    .horizontal()
+                                    .width(Size::fill())
+                                    .content(Content::Flex)
+                                    .spacing(8.)
+                                    .child(
+                                        Button::new()
+                                            .secondary()
+                                            .width(Size::flex(1.))
+                                            .text(t("oneclient.clusters.page.mods"))
+                                            .on_press(move |_| {
+                                                *active_id.write() = Some(cluster_id);
+                                                let _ = RouterContext::get()
+                                                    .push(Route::ClusterMods { cluster_id });
+                                            }),
+                                    )
+                                    .child(
+                                        Button::new()
+                                            .secondary()
+                                            .width(Size::flex(1.))
+                                            .text(t("oneclient.clusters.page.resource_packs"))
+                                            .on_press(move |_| {
+                                                *active_id.write() = Some(cluster_id);
+                                                let _ = RouterContext::get()
+                                                    .push(Route::ClusterTextures { cluster_id });
+                                            }),
+                                    ),
+                            ),
                     ),
             )
     }

@@ -1804,6 +1804,12 @@ impl Actions {
             .launcher
             .syncing_bundles = false;
 
+        match crate::bundle_update_prompt::decide_before_launch(self, cluster_id).await {
+            crate::bundle_update_prompt::Decision::Apply => {}
+            crate::bundle_update_prompt::Decision::Skip => return true,
+            crate::bundle_update_prompt::Decision::Cancel => return false,
+        }
+
         // Bundle content is forced, so the update mode never gates it and the
         // modal never lists it
         // A failed update leaves the cluster half updated, e.g. a mod that

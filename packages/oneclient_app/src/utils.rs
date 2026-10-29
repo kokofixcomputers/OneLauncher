@@ -2,8 +2,7 @@ use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
 use chrono::{Datelike, NaiveDate};
-use oneclient_common::domain::GameLoader;
-use oneclient_common::{ParsedMcVersion, VersionKey, format_mc_version, parse_mc_version};
+use oneclient_common::{ParsedMcVersion, VersionKey, parse_mc_version};
 use oneclient_core::BundleArchive;
 use oneclient_core::clusters::Cluster;
 
@@ -46,46 +45,14 @@ impl ReleaseLine {
     pub fn for_cluster(cluster: &Cluster) -> Option<Self> {
         Self::from_version(&cluster.mc_version)
     }
-
-    /// The generic name of the line `26.1` `1.21.5` `1.20`
-    pub fn pretty_name(&self) -> String {
-        match self.minor {
-            Some(minor) => format_mc_version(self.major, minor, None),
-            None => format!("1.{}", self.major),
-        }
-    }
-
-    fn art_key(&self) -> Option<VersionKey> {
-        self.minor.map(|minor| (minor, None))
-    }
 }
 
 fn cluster_key(cluster: &Cluster) -> Option<VersionKey> {
     parse_mc_version(&cluster.mc_version).and_then(|parsed| parsed.key())
 }
 
-fn sole_version_key(clusters: &[Cluster]) -> Option<VersionKey> {
-    match version_keys(clusters).as_slice() {
-        [only] => Some(*only),
-        _ => None,
-    }
-}
-
-/// A line with a single version is shown as that full version (`26.1.2`) else `1.21`
-pub fn line_title(line: ReleaseLine, clusters: &[Cluster]) -> String {
-    match sole_version_key(clusters) {
-        Some(key) => version_label(line.major, key),
-        None => line.pretty_name(),
-    }
-}
-
-pub fn line_art_key(line: ReleaseLine, clusters: &[Cluster]) -> Option<VersionKey> {
-    sole_version_key(clusters).or_else(|| line.art_key())
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum GridSelection {
-    Line(ReleaseLine),
     Instance(i64),
 }
 
@@ -116,88 +83,6 @@ pub fn group_clusters_by_release<'a>(
     }
 
     groups
-}
-
-pub fn version_keys(clusters: &[Cluster]) -> Vec<VersionKey> {
-    let mut keys = Vec::new();
-    for cluster in clusters {
-        if let Some(key) = cluster_key(cluster)
-            && !keys.contains(&key)
-        {
-            keys.push(key);
-        }
-    }
-    keys.sort();
-    keys
-}
-
-pub fn loaders_for_line(clusters: &[Cluster]) -> Vec<GameLoader> {
-    let mut loaders = Vec::new();
-    for cluster in clusters {
-        if cluster.mc_loader.is_modded() && !loaders.contains(&cluster.mc_loader) {
-            loaders.push(cluster.mc_loader);
-        }
-    }
-    loaders.sort_by_key(|loader| loader.to_string());
-    loaders
-}
-
-pub fn resolve_cluster(
-    clusters: &[Cluster],
-    key: Option<VersionKey>,
-    loader: Option<GameLoader>,
-) -> Option<Cluster> {
-    clusters
-        .iter()
-        .find(|cluster| {
-            let version_ok = key.is_none_or(|key| cluster_key(cluster) == Some(key));
-            let loader_ok = loader.is_none_or(|loader| cluster.mc_loader == loader);
-            version_ok && loader_ok
-        })
-        .cloned()
-}
-
-/// The line the page opens on the active cluster's line else the newest
-pub fn default_line(groups: &ClusterGroups, active: Option<Cluster>) -> Option<ReleaseLine> {
-    if let Some(cluster) = active
-        && let Some(line) = ReleaseLine::for_cluster(&cluster)
-    {
-        return Some(line);
-    }
-    groups.keys().next_back().copied()
-}
-
-pub fn default_version_key(
-    clusters: &[Cluster],
-    preferred: Option<VersionKey>,
-) -> Option<VersionKey> {
-    let keys = version_keys(clusters);
-    if keys.is_empty() {
-        return None;
-    }
-    if let Some(key) = preferred
-        && keys.contains(&key)
-    {
-        return Some(key);
-    }
-    keys.last().copied()
-}
-
-pub fn default_loader(clusters: &[Cluster], preferred: Option<GameLoader>) -> Option<GameLoader> {
-    let loaders = loaders_for_line(clusters);
-    if loaders.is_empty() {
-        return clusters.first().map(|c| c.mc_loader);
-    }
-    if let Some(loader) = preferred
-        && loaders.contains(&loader)
-    {
-        return Some(loader);
-    }
-    Some(loaders[0])
-}
-
-pub fn version_label(major: u32, (minor, patch): VersionKey) -> String {
-    format_mc_version(major, minor, patch)
 }
 
 pub fn format_size(bytes: u64) -> String {

@@ -5,7 +5,7 @@ use crate::components::cluster_menu::open_menu_at;
 use crate::components::{ART_PREVIEW_EDGE, ClusterContextMenu, ClusterMenuTarget, DynamicArt};
 use crate::theme::colors;
 use crate::ui::{border_all_color, last_played_label};
-use crate::utils::{GridSelection, ReleaseLine, line_art_key, line_title};
+use crate::utils::GridSelection;
 
 const ROW_HEIGHT_PX: f32 = 56.;
 const THUMB_PX: f32 = 40.;
@@ -38,26 +38,6 @@ impl InstanceRow {
             subtitle: format!("{} \u{b7} {}", cluster.mc_version, cluster.mc_loader),
             played: last_played_label(cluster.last_played),
             art: DynamicArt::for_cluster(cluster).max_edge(ART_PREVIEW_EDGE),
-            selected,
-            on_press: on_press.into(),
-            menu: None,
-        }
-    }
-
-    pub fn for_line(
-        line: ReleaseLine,
-        clusters: &[Cluster],
-        caption: String,
-        selected: bool,
-        on_press: impl Into<EventHandler<Event<PressEventData>>>,
-    ) -> Self {
-        Self {
-            key: GridSelection::Line(line),
-            title: line_title(line, clusters),
-            subtitle: caption,
-            played: last_played_label(clusters.iter().filter_map(|c| c.last_played).max()),
-            art: DynamicArt::for_version(line.major, line_art_key(line, clusters), None)
-                .max_edge(ART_PREVIEW_EDGE),
             selected,
             on_press: on_press.into(),
             menu: None,
@@ -122,7 +102,9 @@ impl Component for InstanceRow {
             .a11y_focusable(true)
             .a11y_role(AccessibilityRole::Button)
             .on_press(move |e| on_press.call(e))
-            .maybe(self.menu.is_some(), |el| el.on_secondary_down(open_menu_at(menu_at)))
+            .maybe(self.menu.is_some(), |el| {
+                el.on_secondary_down(open_menu_at(menu_at))
+            })
             .on_pointer_enter(move |_| hovering.set(true))
             .on_pointer_leave(move |_| hovering.set(false))
             .maybe_child(self.menu.clone().map(|target| {
