@@ -83,6 +83,19 @@ pub(crate) fn shows_entry(route: &Route, mod_tabs: bool) -> bool {
         )
 }
 
+/// A second press on the same spot within the combo window opens the instance's overview
+pub(crate) fn open_overview_on_double_press(
+    cluster_id: i64,
+    mut active_id: State<Option<i64>>,
+) -> impl FnMut(Event<PointerEventData>) {
+    move |e: Event<PointerEventData>| {
+        if EventsCombos::<()>::pressed(e.global_location()).is_double() {
+            active_id.set(Some(cluster_id));
+            let _ = RouterContext::get().push(Route::ClusterOverview { cluster_id });
+        }
+    }
+}
+
 pub(crate) fn open_menu_at(
     mut position: State<Option<(f32, f32)>>,
 ) -> impl FnMut(Event<PressEventData>) {

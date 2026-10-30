@@ -926,6 +926,7 @@
   "oneclient.clusters.page.sort.oldest": "Least recently played",
   "oneclient.clusters.page.sort.recent": "Recently played",
   "oneclient.clusters.page.sort_by": "Sort by",
+  "oneclient.clusters.page.stop": "Stop",
   "oneclient.clusters.page.syncing": "No versions available yet. Bundles are still syncing.",
   "oneclient.clusters.page.title": "Versions",
   "oneclient.clusters.page.type.custom": "Custom",

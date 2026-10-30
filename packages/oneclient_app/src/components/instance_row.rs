@@ -1,7 +1,7 @@
 use freya::prelude::*;
 use oneclient_core::clusters::Cluster;
 
-use crate::components::cluster_menu::open_menu_at;
+use crate::components::cluster_menu::{open_menu_at, open_overview_on_double_press};
 use crate::components::{ART_PREVIEW_EDGE, ClusterContextMenu, ClusterMenuTarget, DynamicArt};
 use crate::theme::colors;
 use crate::ui::{border_all_color, last_played_label};
@@ -64,6 +64,7 @@ impl Component for InstanceRow {
 
         let a11y_id = use_a11y();
         let focus = use_focus(a11y_id);
+        let active_id = crate::hooks::use_active_cluster_id();
 
         let selected = self.selected;
         let hovered = *hovering.read();
@@ -102,6 +103,10 @@ impl Component for InstanceRow {
             .a11y_focusable(true)
             .a11y_role(AccessibilityRole::Button)
             .on_press(move |e| on_press.call(e))
+            .maybe(matches!(self.key, GridSelection::Instance(_)), |el| {
+                let GridSelection::Instance(id) = self.key;
+                el.on_pointer_down(open_overview_on_double_press(id, active_id))
+            })
             .maybe(self.menu.is_some(), |el| {
                 el.on_secondary_down(open_menu_at(menu_at))
             })

@@ -721,6 +721,7 @@ impl Component for Sidebar {
                                     cluster_id,
                                     dispatch,
                                     launch_button_state(&game, cluster_id, syncing, shared_dir_taken),
+                                    game.is_running(cluster_id),
                                 ))
                                 .child(
                                     Button::new()
@@ -855,7 +856,15 @@ fn play_button(
     cluster_id: i64,
     dispatch: crate::Actions,
     state: (&'static str, bool),
+    running: bool,
 ) -> impl IntoElement {
+    if running {
+        return Button::new()
+            .danger()
+            .width(Size::flex(1.))
+            .on_press(move |_| dispatch.kill_cluster(cluster_id))
+            .text(t("oneclient.clusters.page.stop"));
+    }
     let (label, enabled) = state;
     Button::new()
         .primary()
